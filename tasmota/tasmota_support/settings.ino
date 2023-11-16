@@ -1304,7 +1304,7 @@ void SettingsDefaultSet2(void) {
 
   // Display
 //  Settings->display_model = 0;
-  Settings->display_mode = 0;
+  Settings->display_mode = 1;
   Settings->display_refresh = 2;
   Settings->display_rows = 2;
   Settings->display_cols[0] = 16;

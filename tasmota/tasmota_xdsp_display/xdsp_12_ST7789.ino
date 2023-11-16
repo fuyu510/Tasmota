@@ -40,7 +40,8 @@
 #define USE_TINY_FONT
 
 
-#include <Arduino_ST7789.h>
+//#include <Arduino_ST7789.h>
+#include <Adafruit_ST7789.h>
 #include <FT5206.h>
 
 // currently fixed
@@ -51,7 +52,8 @@
   #endif // USE_LANBON_L8
 
 extern uint8_t color_type;
-Arduino_ST7789 *st7789;
+//Arduino_ST7789 *st7789;
+Adafruit_ST7789 *st7789;
 
 #ifdef USE_FT5206
 uint8_t st7789_ctouch_counter = 0;
@@ -63,38 +65,45 @@ bool st7789_init_done = false;
 void ST7789_InitDriver(void) {
   if (PinUsed(GPIO_ST7789_DC) &&  // This device does not need CS which breaks SPI bus usage
      ((TasmotaGlobal.soft_spi_enabled & SPI_MOSI) || (TasmotaGlobal.spi_enabled & SPI_MOSI))) {
+      Settings->display_model = XDSP_12;
 
-    Settings->display_model = XDSP_12;
+      if (!Settings->display_width) {
+        Settings->display_width = 240;
+      }
+      if (!Settings->display_height) {
+        Settings->display_height = 240;
+      }
 
-    if (!Settings->display_width) {
-      Settings->display_width = 240;
-    }
-    if (!Settings->display_height) {
-      Settings->display_height = 240;
-    }
+      pinMode(5, OUTPUT);
+      digitalWrite(5, LOW); // 백라이트 활성화
+      //pinMode(Pin(GPIO_BACKLIGHT), OUTPUT);
+      //digitalWrite(Pin(GPIO_BACKLIGHT), LOW); // 백라이트 활성화
 
-    // default colors
-    fg_color = ST7789_WHITE;
-    bg_color = ST7789_BLACK;
+      if (TasmotaGlobal.soft_spi_enabled) {
+        //st7789 = new Arduino_ST7789(Pin(GPIO_ST7789_DC), Pin(GPIO_OLED_RESET), Pin(GPIO_SSPI_MOSI), Pin(GPIO_SSPI_SCLK), Pin(GPIO_ST7789_CS), bppin);
+        st7789 = new Adafruit_ST7789(Pin(GPIO_ST7789_CS), Pin(GPIO_ST7789_DC), Pin(GPIO_SSPI_MOSI), Pin(GPIO_SSPI_SCLK), Pin(GPIO_OLED_RESET));
+      } else if (TasmotaGlobal.spi_enabled) {
+        st7789 = new Adafruit_ST7789(Pin(GPIO_ST7789_CS), Pin(GPIO_ST7789_DC), Pin(GPIO_OLED_RESET));
+      }
+      st7789->init(Settings->display_width, Settings->display_height, SPI_MODE2); 
+      //tft.setSPISpeed(40000000);
+      st7789->setRotation(2); // rotates the screen
 
-    int8_t bppin = BACKPLANE_PIN;
-    if (PinUsed(GPIO_BACKLIGHT)) {
-      bppin = Pin(GPIO_BACKLIGHT);
-    }
-
-    // init renderer, may use hardware spi
-    if (TasmotaGlobal.soft_spi_enabled) {
-      st7789 = new Arduino_ST7789(Pin(GPIO_ST7789_DC), Pin(GPIO_OLED_RESET), Pin(GPIO_SSPI_MOSI), Pin(GPIO_SSPI_SCLK), Pin(GPIO_ST7789_CS), bppin);
-    }
-    else if (TasmotaGlobal.spi_enabled) {
-      st7789 = new Arduino_ST7789(Pin(GPIO_ST7789_DC), Pin(GPIO_OLED_RESET), Pin(GPIO_ST7789_CS), bppin);
-    }
-
-    st7789->init(Settings->display_width,Settings->display_height);
-    renderer = st7789;
-    renderer->DisplayInit(DISPLAY_INIT_MODE,Settings->display_size,Settings->display_rotate,Settings->display_font);
-    renderer->dim(GetDisplayDimmer16());
-
+      st7789->fillScreen(ST77XX_BLACK); // fills the screen with black colour
+      st7789->setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+#if 0
+      st7789->setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+      //st7789->setTextColor(ST77XX_GREEN); // text colour to white you can use hex codes like 0xDAB420 too
+      st7789->setTextFont(2);
+      //st7789->setTextWrap(true);
+      //st7789->setCursor(10, 10); // starts to write text at y10 x10
+      st7789->DrawStringAt(30, 30, "ST7789 TFT!", ST77XX_WHITE,0);
+      //st7789->print("HELLO WORLD!");
+#endif
+      renderer = st7789;
+      renderer->DisplayInit(DISPLAY_INIT_MODE, Settings->display_size, Settings->display_rotate, Settings->display_font);
+      renderer->dim(GetDisplayDimmer16());
+#if 0
 #ifdef SHOW_SPLASH
     if (!Settings->flag5.display_no_splash) {
       // Welcome text
@@ -104,7 +113,7 @@ void ST7789_InitDriver(void) {
       delay(1000);
     }
 #endif
-
+#endif
     color_type = COLOR_COLOR;
 
 #ifdef ESP32
@@ -172,6 +181,63 @@ st7789_ctouch_counter++;
 #endif // USE_FT5206
 #endif // ESP32
 
+void ST7789Time(void) {
+  static char time[12];
+  static char date[12];
+  char line[12];
+  static int16_t x, y, y2;
+  static uint16_t w, h;
+
+  renderer->setTextSize(3);
+
+  snprintf_P(line, sizeof(line), PSTR("%04d" D_YEAR_MONTH_SEPARATOR "%02d" D_MONTH_DAY_SEPARATOR "%02d"), RtcTime.year, RtcTime.month, RtcTime.day_of_month);   // [2018-11-22]
+  
+  if(strcmp(date, line) != 0) {
+
+    strcpy(date, line);
+  
+    if(x == 0 && y == 0) {
+      renderer->getTextBounds(date, 5, 20, &x, &y, &w, &h);
+      x = (240 - w) >> 1;
+      y = 240 - (h * 3) >> 1;
+      y2 = 240 - (y + (h >> 1));
+    }
+
+    renderer->setCursor(x, y);
+    //renderer->writeFillRect(x, y, w, h, ST77XX_GREEN);
+    renderer->println(date);
+  }
+
+  snprintf_P(line, sizeof(line), PSTR(" %02d" D_HOUR_MINUTE_SEPARATOR "%02d" D_MINUTE_SECOND_SEPARATOR "%02d"), RtcTime.hour, RtcTime.minute, RtcTime.second);  // [ 12:34:56 ]
+  if(strcmp(time, line) != 0) {
+    strcpy(time, line);
+
+    renderer->setCursor(x, y2);
+    //renderer->writeFillRect(x, y2, w, h, ST77XX_GREEN);
+    renderer->println(time);
+  }
+  
+  renderer->Updateframe();
+}
+
+void ST7789Refresh(void) {     // Every second
+  switch (Settings->display_mode) {
+    case 1:  // Time
+      ST7789Time();
+      break;
+    case 2:  // Local
+    case 4:  // Mqtt
+      //SSD1331PrintLog(false);
+      break;
+    case 3:  // Local + Time
+    case 5:  // Mqtt + Time
+      //SSD1331PrintLog(true);
+      break;
+    default:;
+  }
+}
+
+
 /*********************************************************************************************/
 /*********************************************************************************************\
  * Interface
@@ -189,6 +255,9 @@ bool Xdsp12(uint32_t function)
       switch (function) {
         case FUNC_DISPLAY_MODEL:
           result = true;
+          break;
+        case FUNC_DISPLAY_EVERY_SECOND:
+          ST7789Refresh();
           break;
         case FUNC_DISPLAY_EVERY_50_MSECOND:
 #ifdef USE_FT5206
